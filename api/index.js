@@ -15,6 +15,9 @@ import {
 import {
   derivePxx, searchKeyOf, annuaireToStudent, buildRosterUpsert, applyRosterUpsert,
 } from "./lib/students.js";
+import {
+  statutPaiementValide, normalizeNotePaiement, avecPaiements, resumePaiements,
+} from "./lib/paiements.js";
 
 dotenv.config();
 
@@ -150,6 +153,18 @@ const authenticateAdmin = (req, res, next) => {
   res.status(401).json({ success: false, message: "Accès admin requis. Merci de te connecter." });
 };
 
+// Jeton bureau hors `authorization` (réservé au jeton élève de la session
+// anonyme) : les routes PUBLIQUES d'affichage l'acceptent pour enrichir la
+// réponse du bureau — sans lui, pas un octet de paiement dans le JSON.
+// Le jeton reste celui de /api/login ({admin:true}), jamais un second secret.
+const estAdminRequete = (req) => {
+  try {
+    const decoded = jsonwebtoken.verify(req.headers["x-admin-token"] || "", process.env.JWT_SECRET);
+    return !!(decoded && decoded.admin);
+  } catch (_) { /* absent/invalide/expiré : vue élève, rien de plus */ }
+  return false;
+};
+
 app.post("/api/createevent", authenticateAdmin, async (req, res) => {
   const { name, location, description } = req.body;
   const type = req.body.type === "atelier" ? "atelier" : "sortie";
@@ -218,6 +233,11 @@ app.post("/api/editevent", authenticateAdmin, async (req, res) => {
       await db
         .delete(schema.resultats)
         .where(and(eq(schema.resultats.eid, id), eq(schema.resultats.pxx, pxx)));
+      // Retiré = plus rien à payer : la rangée de paiement ne survit pas à
+      // l'inscription (un re-ajout repart à « en attente », le défaut).
+      await db
+        .delete(schema.paiements)
+        .where(and(eq(schema.paiements.eid, id), eq(schema.paiements.pxx, pxx)));
     }
   }
   for (const pxx of users) {
@@ -281,6 +301,11 @@ app.post("/api/removeevent", authenticateAdmin, async (req, res) => {
   await db
     .delete(schema.resultats)
     .where(eq(schema.resultats.eid, id));
+  // L'état de paiement suit l'inscription : l'événement disparaît, ses
+  // paiements déclarés ne restent pas en base (pas de rangée orpheline).
+  await db
+    .delete(schema.paiements)
+    .where(eq(schema.paiements.eid, id));
   await db
     .delete(schema.events)
     .where(eq(schema.events.id, id));
@@ -397,7 +422,7 @@ async function getEventUsers(id) {
   return rankRegistrants(avecPendances, deadline);
 }
 
-async function fetchEvent(id) {
+async function fetchEvent(id, { vueBureau = false } = {}) {
   const event = await db
     .select()
     .from(schema.events)
@@ -416,6 +441,15 @@ async function fetchEvent(id) {
     event.users = event.users
       .map(u => ({ ...u, gagne: gel.has(u.pxx) }))
       .sort((a, b) => (b.gagne ? 1 : 0) - (a.gagne ? 1 : 0));   // gagnants d'abord, ordre stable
+  }
+  // Vue bureau (trésorerie) : état de paiement de chaque inscrit + résumé
+  // de l'événement. Exclusivement sur jeton admin valide (estAdminRequete) :
+  // un élève reçoit le JSON d'avant, à l'octet près.
+  if (vueBureau) {
+    const rows = await db.select().from(schema.paiements)
+      .where(eq(schema.paiements.eid, id));
+    event.users = avecPaiements(event.users, rows);
+    event.paiements = resumePaiements(event.users, event.participants, event.closed);
   }
   return event;
 }
@@ -523,6 +557,7 @@ const authenticateJWT = (req, res, next) => {
 };
 
 app.get("/api/events", actualizeResults, async (req, res) => {
+  const vueBureau = estAdminRequete(req);
   const events = await db
     .select()
     .from(schema.events)
@@ -530,7 +565,7 @@ app.get("/api/events", actualizeResults, async (req, res) => {
   const fenetre = await getFenetreHeures();   // portée par chaque événement (phase côté liste)
 
   for (const event of events) {
-    var users = (await fetchEvent(event.id)).users || [];
+    var users = (await fetchEvent(event.id, { vueBureau })).users || [];
     event.places = Math.max(0, event.participants - users.length);
     event.fenetre = fenetre;
   }
@@ -540,7 +575,7 @@ app.get("/api/events", actualizeResults, async (req, res) => {
 
 app.get("/api/event/:id", actualizeResults, async (req, res) => {
   const id = req.params.id;
-  const event = await fetchEvent(id);
+  const event = await fetchEvent(id, { vueBureau: estAdminRequete(req) });
 
   if (!event) {
     res.status(404).json({ success: false, message: "Événement introuvable" });
@@ -862,6 +897,38 @@ app.post("/api/admin/cotisants/attach", authenticateAdmin, async (req, res) => {
   await db.delete(schema.roster).where(eq(schema.roster.pxx, fromPxx));
   await reloadRoster();
   res.json({ success: true });
+});
+
+// --- Paiements des inscriptions (bureau/trésorerie) ---
+// Déclare l'état de paiement d'une inscription : deux statuts (attente, paye),
+// note optionnelle. Upsert : redéclarer remplace — y compris revenir à
+// « en attente » après un « payé » posé par erreur. La rangée ne survit pas à
+// l'inscription (retrait/édition : supprimée ; suppression d'événement : idem)
+// et rien de tout cela n'est jamais exposé hors session admin.
+app.post("/api/admin/paiement", authenticateAdmin, async (req, res) => {
+  const { eid, pxx } = req.body;
+  const statut = req.body.statut;
+  const note = normalizeNotePaiement(req.body.note);
+  if (!eid || !pxx) {
+    res.status(400).json({ success: false, message: "Événement et personne requis." });
+    return;
+  }
+  if (!statutPaiementValide(statut)) {
+    res.status(400).json({ success: false, message: "Statut de paiement inconnu." });
+    return;
+  }
+  const inscrit = await db.select().from(schema.paps)
+    .where(and(eq(schema.paps.eid, eid), eq(schema.paps.pxx, pxx)))
+    .then(r => r[0]);
+  if (!inscrit) {
+    res.status(404).json({ success: false, message: "Cette personne n'est pas inscrite à cet événement." });
+    return;
+  }
+  const maj = new Date();
+  await db.insert(schema.paiements)
+    .values({ eid, pxx, statut, note, maj_at: maj })
+    .onDuplicateKeyUpdate({ set: { statut, note, maj_at: maj } });
+  res.json({ success: true, paiement: { statut, note, majAt: maj } });
 });
 
 // --- Clé API du portail des élèves + sync automatique de la base élèves ---

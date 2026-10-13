@@ -46,6 +46,23 @@ export const resultats = mysqlTable("resultats", {
   uniqResultats: uniqueIndex("uniq_resultats_eid_pxx").on(t.eid, t.pxx),
 }));
 
+// Paiements (bureau, trésorerie) : état de paiement d'une inscription, à
+// l'événement près. Une rangée naît au PREMIER geste du bureau — son absence
+// vaut « en attente de paiement » (défaut), donc les inscriptions existantes
+// ne migrent pas. JAMAIS exposée hors session admin : /api/event/:id n'attache
+// `paiement` à un inscrit que sur jeton bureau valide (en-tête x-admin-token).
+export const paiements = mysqlTable("paiements", {
+  id: int("id").notNull().autoincrement().primaryKey(),
+  eid: varchar("eid", { length: 16 }).notNull().references(() => events.id),
+  pxx: varchar("pxx", { length: 10 }).notNull(),
+  statut: varchar("statut", { length: 16 }).notNull().default("attente"),
+  note: text("note"),
+  maj_at: datetime("maj_at").notNull(),
+}, (t) => ({
+  // Une rangée par inscription (l'état remplace, jamais cumulé).
+  uniqPaiement: uniqueIndex("uniq_paiements_eid_pxx").on(t.eid, t.pxx),
+}));
+
 export const hpaps = mysqlTable("hpaps", {
   id: int("id").notNull().autoincrement().primaryKey(),
   eid: varchar("eid", { length: 16 }).notNull().references(() => events.id),

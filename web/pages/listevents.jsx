@@ -3,11 +3,15 @@ import { MetaProvider, Title } from "@solidjs/meta";
 import { Layout } from "../components/layout";
 import { BackButton, Link, LinkButton, mds } from "../components/utils";
 import { Icon } from "../components/icons";
-import { isAdmin } from "../res/admin";
+import { isAdmin, adminToken } from "../res/admin";
+import { PaiementResumeChip } from "../components/paiementdialog";
 import { PhaseChip, TypeChip } from "../components/phase";
 
 async function fetchEvents() {
-  const res = await fetch("/api/events");
+  // Jeton bureau en en-tête dédié : le serveur enrichit chaque événement du
+  // résumé trésorerie (payés/dus) — sans lui, rien ne change côté élèves.
+  const headers = adminToken() ? { "x-admin-token": adminToken() } : {};
+  const res = await fetch("/api/events", { headers });
   if (!res.ok) throw new Error("Impossible de récupérer les événements");
   return (await res.json()).map(ev => ({ 
     ...ev, 
@@ -60,6 +64,10 @@ export default function ListEventsPage() {
                   {ev.date.toLocaleString()}</div>
                 <div class="text-gray-600 flex flex-row items-center gap-1 flex-wrap">
                   {ev.participants} places
+                  <Show when={isAdmin() && ev.paiements}>
+                    <PaiementResumeChip resume={ev.paiements}/>
+                    {mds}
+                  </Show>
                   <TypeChip ev={ev}/>
                   {mds}
                   <PhaseChip ev={ev}/>

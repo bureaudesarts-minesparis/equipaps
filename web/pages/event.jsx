@@ -6,7 +6,8 @@ import { Layout } from "../components/layout";
 import { RosterSearch } from "../components/rostersearch";
 import { PhaseChip, Countdown, TypeChip } from "../components/phase";
 import { ConfirmDialog } from "../components/confirmdialog";
-import { isAdmin } from "../res/admin";
+import { PaiementDialog } from "../components/paiementdialog";
+import { isAdmin, adminToken } from "../res/admin";
 import { BackButton, LinkButton, promoLabel } from "../components/utils";
 import { Icon } from "../components/icons";
 
@@ -19,6 +20,10 @@ createEffect(() => {
 export async function fetchEvent(id) {
   const headers = {};
   if (token()) headers.authorization = token();
+  // Vue bureau : le jeton admin (x-admin-token, jamais dans `authorization`
+  // qui porte la session élève) enrichit la réponse de l'état de paiement —
+  // sans lui le serveur ne renvoie rien de plus qu'avant.
+  if (adminToken()) headers["x-admin-token"] = adminToken();
   const res = await fetch(`/api/event/${id}`, { headers });
   if (!res.ok) throw new Error("Événement introuvable");
   const json = await res.json();
@@ -36,6 +41,16 @@ export default function EventPage() {
   const [extPrenom, setExtPrenom] = createSignal("");
   const [extNom, setExtNom] = createSignal("");
   const [extEmail, setExtEmail] = createSignal("");
+  // Inscription dont le bureau déclare le paiement (modale) — null : fermée.
+  const [paiementUser, setPaiementUser] = createSignal(null);
+
+  // Après une déclaration de paiement : la liste reflète l'état frais (le
+  // serveur attache `paiement` et le résumé sur la même route) et la modale
+  // se referme.
+  const onPaiementSaved = () => {
+    setPaiementUser(null);
+    refetch();
+  };
 
   // Double validation : le premier clic ouvre la modale d'engagement, le
   // second seul écrit. Corrige le missclick, et rappelle l'engagement.
@@ -192,6 +207,7 @@ export default function EventPage() {
                   <h3 class="font-semibold text-base m-0">Inscrits</h3>
                   <span class="text-sm text-gray-600">
                     {Math.min(ev().users.length, ev().participants)}/{ev().participants} place{ev().participants > 1 ? 's' : ''} · {ev().users.length} inscrit{ev().users.length > 1 ? 's' : ''}
+                    <Show when={isAdmin() && ev().paiements}> · <span classList={{ 'text-vf font-semibold': ev().paiements.payes === ev().paiements.dus && ev().paiements.dus > 0, 'text-gray-600': !(ev().paiements.payes === ev().paiements.dus && ev().paiements.dus > 0) }}>{ev().paiements.payes}/{ev().paiements.dus} payé{ev().paiements.payes > 1 ? 's' : ''}</span></Show>
                   </span>
                 </div>
                 <Show when={ev().users.length === 0}>
@@ -213,11 +229,17 @@ export default function EventPage() {
                               <div class="flex-grow border-t border-gray-300"/>
                             </div>
                           </Show>
-                          <div role="listitem" classList={{
-                            'flex items-center gap-2 rounded px-2 py-1': true,
-                            'bg-vc/25': retenu,
-                            'bg-black/5': !retenu,
-                          }}>
+                          <div
+                            role="listitem"
+                            onClick={() => { if (isAdmin()) setPaiementUser(user); }}
+                            title={isAdmin() ? "Cliquer pour déclarer le paiement" : undefined}
+                            classList={{
+                              'flex items-center gap-2 rounded px-2 py-1': true,
+                              'bg-vc/25': retenu,
+                              'bg-black/5': !retenu,
+                              'cursor-pointer': isAdmin(),
+                            }}
+                          >
                             <span class="text-xs text-gray-500 w-5 text-right shrink-0">{i() + 1}</span>
                             <div class="flex flex-col flex-grow min-w-0">
                               <span class="font-semibold text-sm truncate">
@@ -232,6 +254,18 @@ export default function EventPage() {
                                 <Show when={user.enAttente}> · {user.enAttente} en attente ailleurs</Show>
                               </span>
                             </div>
+                            <Show when={isAdmin() && user.paiement}>
+                              <span
+                                class="text-xs rounded-full px-2 py-0.5 shrink-0"
+                                classList={{
+                                  'bg-green-100 text-green-800 font-semibold': user.paiement.statut === 'paye',
+                                  'bg-yellow-100 text-yellow-800': user.paiement.statut !== 'paye',
+                                }}
+                                title={user.paiement.note || undefined}
+                              >
+                                {user.paiement.statut === 'paye' ? 'payé' : 'en attente de paiement'}
+                              </span>
+                            </Show>
                             <Show when={retenu} fallback={<span class="text-xs text-gray-500 shrink-0">{ev().closed ? (ev().type === "atelier" ? "non retenu" : "non retenue") : "en attente"}</span>}>
                               <span class="text-xs font-bold text-vf shrink-0">{ev().closed ? "✓ retenu" : "✓ provisoirement retenu"}</span>
                             </Show>
@@ -279,6 +313,13 @@ export default function EventPage() {
                 </Show>
               </Show>
             </Show>
+            <PaiementDialog
+              user={paiementUser()}
+              eid={ev()?.id}
+              eventName={ev()?.name}
+              onClose={() => setPaiementUser(null)}
+              onSaved={onPaiementSaved}
+            />
             <ConfirmDialog
               open={showConfirm()}
               title="Tu t'engages !"
