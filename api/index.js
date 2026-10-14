@@ -3,6 +3,8 @@ import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import * as schema from "./db/schema.js";
 import dotenv from "dotenv";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { and, eq, gte } from "drizzle-orm";
 import jsonwebtoken from "jsonwebtoken";
 import multer from "multer";
@@ -1198,7 +1200,29 @@ app.get("/api/admin/summary", authenticateAdmin, async (req, res) => {
   });
 });
 
-const PORT = process.env.PORT_API || 3000;
+// --- Front servi par l'API (déploiement mono-conteneur, Coolify) ---
+// dist/ est le build Vite (npm run build). L'Express sert le front ET l'API
+// sur le même port : une route /api non matchée passe au 404 JSON, toute
+// autre requête GET retombe sur index.html (router Solid en mode History —
+// /cinematheque/film/42 doit charger l'app, pas un 404). Absent en dev
+// (vite --host) : rien n'est servi et aucune route ne casse.
+const DIST = path.resolve("dist");
+if (existsSync(DIST)) {
+  // D'abord les fichiers du build tels quels (js, css, images, logos)…
+  app.use(express.static(DIST));
+  // …puis le fallback SPA pour toute autre page (les routes non-API).
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    if (req.method !== "GET") return next();
+    res.sendFile(path.join(DIST, "index.html"), err => {
+      if (err) next(err);
+    });
+  });
+}
+
+// PORT : la plateforme d'hébergement (Coolify) l'injecte ; PORT_API reste
+// l'ancien réglage du service Euterpe, qui garde la main sur 3000.
+const PORT = process.env.PORT || process.env.PORT_API || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
