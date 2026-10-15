@@ -7,7 +7,7 @@
 //     sous rafale (R2-K3) — les uid NULL (historique, ajout bureau) restent
 //     exempts (MySQL accepte plusieurs NULL dans un index unique).
 // Idempotent et re-jouable :
-//   node api/scripts/migrate-revision-2.js   (depuis /home/rezal/equipaps)
+//   node api/scripts/migrate-revision-2.js   (depuis la racine de l'app)
 
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";

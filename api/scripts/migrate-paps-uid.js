@@ -1,6 +1,6 @@
 // Migration : colonne paps.uid (garde-fou une-personne-par-événement).
 // Idempotent et re-jouable :
-//   node api/scripts/migrate-paps-uid.js   (depuis /home/rezal/equipaps)
+//   node api/scripts/migrate-paps-uid.js   (depuis la racine de l'app)
 // Colonne additive : les rangées existantes restent NULL (inscriptions
 // historiques), aucune donnée ne bouge.
 

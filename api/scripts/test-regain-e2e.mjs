@@ -11,7 +11,8 @@
 //   5. Isolation de type : les 2 SORTIES d'Alice ne pèsent JAMAIS sur les tirages
 //      d'ateliers (compteur affiché = ateliers seulement, 0).
 // Crée un scénario contrôlé, lit les classements via GET /api/event/:id, vérifie,
-// puis NETTOIE tout. À lancer sur Euterpe, depuis /home/rezal/equipaps :
+// puis NETTOIE tout. À lancer
+// dans le Terminal de l'app `equipaps` sur Coolify (projet BDA), où l'environnement est posé :
 //   node api/scripts/test-regain-e2e.mjs
 import "dotenv/config";
 import mysql from "mysql2/promise";

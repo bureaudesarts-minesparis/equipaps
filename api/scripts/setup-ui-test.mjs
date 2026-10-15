@@ -46,7 +46,7 @@ await addPaps(C.pxx, 10);
 await addPaps(D.pxx, 15);
 
 console.log("Événement démo prêt.");
-console.log("URL: https://bda.rezal-mdm.com/event/" + EID);
+console.log("URL: https://bda.apps.rezal-mdm.com/event/" + EID);
 console.log("Attendu (2 places) : retenus = " + [A, B].map(x => x.prenom + " " + x.nom).join(", ")
   + " ; en attente = " + [C, D].map(x => x.prenom + " " + x.nom).join(", "));
 console.log("(A,B = 0 sortie ; A cotisant ; C = 1 sortie ; D = 3 sorties)");

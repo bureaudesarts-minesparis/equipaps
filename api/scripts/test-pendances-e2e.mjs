@@ -4,8 +4,8 @@
 // places en comptant pour zéro — sa place en attente ailleurs pèse comme une
 // obtention, SAUF dans le tirage de sa plus ancienne inscription (protégée).
 // Crée un scénario contrôlé, lit les classements via GET /api/event/:id,
-// vérifie, puis NETTOIE tout. À lancer sur Euterpe, depuis /home/rezal/equipaps
-// (dotenv charge l'environnement du service) :
+// vérifie, puis NETTOIE tout. À lancer
+// dans le Terminal de l'app `equipaps` sur Coolify (projet BDA), où l'environnement est posé :
 //   node api/scripts/test-pendances-e2e.mjs
 import "dotenv/config";
 import mysql from "mysql2/promise";

@@ -1,6 +1,6 @@
 // Migration : dédoublonnage paps + index UNIQUE (eid, pxx).
 // Idempotent et re-jouable :
-//   node api/scripts/migrate-paps-unique.js   (depuis /home/rezal/equipaps)
+//   node api/scripts/migrate-paps-unique.js   (depuis la racine de l'app)
 //
 // Les doublons venaient de la course check-then-insert d'avant l'index (double-
 // clic, deux onglets) — la lecture dédoublonnait déjà, le tirage est donc

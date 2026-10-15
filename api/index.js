@@ -1220,8 +1220,8 @@ if (existsSync(DIST)) {
   });
 }
 
-// PORT : la plateforme d'hébergement (Coolify) l'injecte ; PORT_API reste
-// l'ancien réglage du service Euterpe, qui garde la main sur 3000.
+// PORT : la plateforme d'hébergement (Coolify) l'injecte ; PORT_API : le dev
+// local (cible du proxy Vite) ; 3000 sinon.
 const PORT = process.env.PORT || process.env.PORT_API || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
