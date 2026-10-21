@@ -913,6 +913,120 @@ app.post("/api/admin/cotisants/attach", authenticateAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
+// Migration / rattachement de Léo de Bourdoncle (25salvy + 25debourdo -> 25dbdss)
+// Protégé par authenticateAdmin (réservé au bureau). Exécutable directement via l'API.
+app.post("/api/admin/migration/rattacher-leo", authenticateAdmin, async (req, res) => {
+  const TARGET_PXX = "25dbdss";
+  const SOURCE_PXXS = ["25salvy", "25debourdo"];
+  const ALL_PXXS = [TARGET_PXX, ...SOURCE_PXXS];
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1. Dédoublonnage sur paps
+    const [papsRows] = await conn.query(
+      "SELECT id, eid, pxx, date FROM paps WHERE pxx IN (?) ORDER BY eid, date ASC, id ASC",
+      [ALL_PXXS]
+    );
+    const papsSeen = new Map();
+    const papsToDelete = [];
+    for (const r of papsRows) {
+      if (papsSeen.has(r.eid)) papsToDelete.push(r.id);
+      else papsSeen.set(r.eid, r.id);
+    }
+    if (papsToDelete.length > 0) {
+      await conn.query("DELETE FROM paps WHERE id IN (?)", [papsToDelete]);
+    }
+
+    // 2. Dédoublonnage sur resultats
+    const [resRows] = await conn.query(
+      "SELECT id, eid, pxx FROM resultats WHERE pxx IN (?) ORDER BY eid, id ASC",
+      [ALL_PXXS]
+    );
+    const resSeen = new Map();
+    const resToDelete = [];
+    for (const r of resRows) {
+      if (resSeen.has(r.eid)) resToDelete.push(r.id);
+      else resSeen.set(r.eid, r.id);
+    }
+    if (resToDelete.length > 0) {
+      await conn.query("DELETE FROM resultats WHERE id IN (?)", [resToDelete]);
+    }
+
+    // 3. Dédoublonnage sur paiements
+    const [paiementRows] = await conn.query(
+      "SELECT id, eid, pxx, statut, note, maj_at FROM paiements WHERE pxx IN (?) ORDER BY eid, (statut = 'paye') DESC, maj_at DESC",
+      [ALL_PXXS]
+    );
+    const paiementsSeen = new Map();
+    const paiementsToDelete = [];
+    for (const r of paiementRows) {
+      if (paiementsSeen.has(r.eid)) paiementsToDelete.push(r.id);
+      else paiementsSeen.set(r.eid, r.id);
+    }
+    if (paiementsToDelete.length > 0) {
+      await conn.query("DELETE FROM paiements WHERE id IN (?)", [paiementsToDelete]);
+    }
+
+    // 4. Mises à jour des clés étrangères
+    const [upPaps] = await conn.query("UPDATE paps SET pxx = ? WHERE pxx IN (?)", [TARGET_PXX, SOURCE_PXXS]);
+    const [upHpaps] = await conn.query("UPDATE hpaps SET pxx = ? WHERE pxx IN (?)", [TARGET_PXX, SOURCE_PXXS]);
+    const [upRes] = await conn.query("UPDATE resultats SET pxx = ? WHERE pxx IN (?)", [TARGET_PXX, SOURCE_PXXS]);
+    const [upPaiements] = await conn.query("UPDATE paiements SET pxx = ? WHERE pxx IN (?)", [TARGET_PXX, SOURCE_PXXS]);
+    const [upUsers] = await conn.query("UPDATE users SET pxx = ? WHERE pxx IN (?)", [TARGET_PXX, SOURCE_PXXS]);
+
+    // 5. Roster : upsert 25dbdss
+    const now = new Date();
+    await conn.query(
+      `INSERT INTO roster (pxx, prenom, nom, email, promo, photo_url, search_key, cotisant, source_id, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         prenom=VALUES(prenom), nom=VALUES(nom), email=VALUES(email), promo=VALUES(promo),
+         photo_url=VALUES(photo_url), search_key=VALUES(search_key), cotisant=1,
+         source_id=VALUES(source_id), synced_at=VALUES(synced_at)`,
+      [
+        TARGET_PXX,
+        "Léo",
+        "de Bourdoncle de Saint Salvy",
+        "leo.de_bourdoncle_de_saint_salvy@etu.minesparis.psl.eu",
+        "25",
+        "https://eleves.rezal-mdm.com/upload/utilisateurs/25salvy.jpg",
+        "leo de bourdoncle de saint salvy",
+        1,
+        "3749",
+        now,
+      ]
+    );
+
+    // 6. Nettoyage anciennes rangées
+    const [delRoster] = await conn.query("DELETE FROM roster WHERE pxx IN (?)", [SOURCE_PXXS]);
+
+    await conn.commit();
+    await reloadRoster();
+    res.json({
+      success: true,
+      message: "Léo de Bourdoncle rattaché avec succès",
+      rapport: {
+        papsSupprimes: papsToDelete.length,
+        resultatsSupprimes: resToDelete.length,
+        paiementsSupprimes: paiementsToDelete.length,
+        papsMisAJour: upPaps.affectedRows,
+        hpapsMisAJour: upHpaps.affectedRows,
+        resultatsMisAJour: upRes.affectedRows,
+        paiementsMisAJour: upPaiements.affectedRows,
+        usersMisAJour: upUsers.affectedRows,
+        rosterAnciensSupprimes: delRoster.affectedRows,
+      }
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error("[migration-leo]", err);
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
 // --- Paiements des inscriptions (bureau/trésorerie) ---
 // Déclare l'état de paiement d'une inscription : deux statuts (attente, paye),
 // note optionnelle. Upsert : redéclarer remplace — y compris revenir à
