@@ -22,9 +22,10 @@ export function normalizeNotePaiement(note) {
 
 // Attache l'état de paiement aux inscrits d'un événement : chaque user
 // reçoit `paiement { statut, note, majAt }`, ATTENTE par défaut quand le
-// bureau n'a encore rien déclaré. Pur et total : `rows` sont les rangées
-// `paiements` de l'événement, `users` la liste triée telle quelle.
-export function avecPaiements(users, rows) {
+// bureau n'a encore rien déclaré (ou `defaultStatut` passé en contexte, ex.
+// STATUT_PAYE pour les événements du mandat précédent). Pur et total :
+// `rows` sont les rangées `paiements` de l'événement, `users` la liste triée.
+export function avecPaiements(users, rows, defaultStatut = STATUT_ATTENTE) {
   const byPxx = new Map(rows.map(r => [r.pxx, r]));
   return users.map(u => {
     const r = byPxx.get(u.pxx);
@@ -32,7 +33,7 @@ export function avecPaiements(users, rows) {
       ...u,
       paiement: r
         ? { statut: r.statut, note: r.note, majAt: r.maj_at }
-        : { statut: STATUT_ATTENTE, note: null, majAt: null },
+        : { statut: defaultStatut, note: null, majAt: null },
     };
   });
 }

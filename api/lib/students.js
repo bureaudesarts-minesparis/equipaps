@@ -41,12 +41,14 @@ export function annuaireToStudent(item, uploadBase) {
     photo_url: item.photo ? `${uploadBase}/${item.photo}` : null,
     nnom: normLogin(item.nom),
     nprenom: normLogin(item.prenom),
+    login: item.nom_utilisateur ? normLogin(item.nom_utilisateur) : null,
   };
 }
 
 // Construit l'upsert d'une liste d'élèves contre le roster existant : rangée
 // déjà attachée par source_id -> mise à jour (pxx et cotisant PRÉSERVÉS) ;
-// sinon pxx dérivé neuf. Partagé par l'import annuaire PDM et la sync portail.
+// sinon pxx issu en priorité du login officiel portail (si <= 10 car. et libre),
+// repli sur pxx dérivé neuf. Partagé par l'import annuaire PDM et la sync portail.
 export function buildRosterUpsert(students, existing) {
   const bySource = new Map(existing.filter(r => r.source_id).map(r => [r.source_id, r]));
   const usedPxx = new Set(existing.map(r => r.pxx));
@@ -59,7 +61,8 @@ export function buildRosterUpsert(students, existing) {
         updates.push({ pxx: row.pxx, prenom: s.prenom, nom: s.nom, email: s.email, promo: s.promo, photo_url: s.photo_url, search_key: searchKeyOf(s.prenom, s.nom) });
       }
     } else {
-      const pxx = derivePxx(s, usedPxx);
+      const candLogin = s.login && s.login.length <= 10 && !usedPxx.has(s.login) ? s.login : null;
+      const pxx = candLogin || derivePxx(s, usedPxx);
       usedPxx.add(pxx);
       inserts.push({ pxx, prenom: s.prenom, nom: s.nom, email: s.email, promo: s.promo, photo_url: s.photo_url, search_key: searchKeyOf(s.prenom, s.nom), source_id: s.id });
     }

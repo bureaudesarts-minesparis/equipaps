@@ -18,12 +18,13 @@ const STATUTS = [
 // d'UI pour tout le site.
 export function PaiementResumeChip(props) {
   const r = props.resume;
+  const regularise = r.dus === 0 || r.payes >= r.dus;
   return (
     <span
       classList={{
-        "text-xs rounded-full px-2 py-0.5": true,
-        "bg-green-100 text-green-800 font-semibold": r.payes === r.dus && r.dus > 0,
-        "bg-yellow-100 text-yellow-800": !(r.payes === r.dus && r.dus > 0),
+        "text-xs rounded-full px-2 py-0.5 shrink-0": true,
+        "bg-green-100 text-green-800 font-semibold": regularise,
+        "bg-yellow-100 text-yellow-800": !regularise,
       }}
       title="Parmi les retenus, payés sur dus"
     >
@@ -44,6 +45,7 @@ export function PaiementDialog(props) {
       setStatut(props.user.paiement?.statut || "attente");
       setNote(props.user.paiement?.note || "");
       setStatus("");
+      setEnregistrement(false);
     }
   });
 
@@ -73,8 +75,9 @@ export function PaiementDialog(props) {
       }
     } catch (_) {
       setStatus("Erreur lors de l'enregistrement.");
+    } finally {
+      setEnregistrement(false);
     }
-    setEnregistrement(false);
   };
 
   return (

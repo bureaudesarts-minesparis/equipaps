@@ -39,6 +39,11 @@ test("avecPaiements : absence de rangée = ATTENTE, rangée = état déclaré", 
   assert.deepEqual(out[1].paiement, { statut: STATUT_PAYE, note: "espèces", majAt: "2026-10-13" });
   // la source n'est pas mutée
   assert.equal(users[0].paiement, undefined);
+
+  // defaultStatut personnalisé (ex: mandat précédent)
+  const outPrecedent = avecPaiements(users, rows, STATUT_PAYE);
+  assert.deepEqual(outPrecedent[0].paiement, { statut: STATUT_PAYE, note: null, majAt: null });
+  assert.deepEqual(outPrecedent[1].paiement, { statut: STATUT_PAYE, note: "espèces", majAt: "2026-10-13" });
 });
 
 test("resumePaiements : payés comptés parmi les retenus, avant et après gel", () => {

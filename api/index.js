@@ -19,6 +19,7 @@ import {
 } from "./lib/students.js";
 import {
   statutPaiementValide, normalizeNotePaiement, avecPaiements, resumePaiements,
+  STATUT_PAYE, STATUT_ATTENTE,
 } from "./lib/paiements.js";
 
 dotenv.config();
@@ -450,7 +451,14 @@ async function fetchEvent(id, { vueBureau = false } = {}) {
   if (vueBureau) {
     const rows = await db.select().from(schema.paiements)
       .where(eq(schema.paiements.eid, id));
-    event.users = avecPaiements(event.users, rows);
+    // Mandat précédent (borne issue du comptage_depuis ou 2026-09-01) :
+    // validé par défaut (« payé »), sauf déclaration explicite du bureau.
+    const comptageDepuis = await getComptageDepuis();
+    const borneMandat = comptageDepuis || new Date("2026-09-01");
+    const dateEv = new Date(event.date);
+    const estMandatPrecedent = !isNaN(dateEv) && dateEv < borneMandat;
+    const defaultStatut = estMandatPrecedent ? STATUT_PAYE : STATUT_ATTENTE;
+    event.users = avecPaiements(event.users, rows, defaultStatut);
     event.paiements = resumePaiements(event.users, event.participants, event.closed);
   }
   return event;
@@ -567,9 +575,13 @@ app.get("/api/events", actualizeResults, async (req, res) => {
   const fenetre = await getFenetreHeures();   // portée par chaque événement (phase côté liste)
 
   for (const event of events) {
-    var users = (await fetchEvent(event.id, { vueBureau })).users || [];
+    const ev = await fetchEvent(event.id, { vueBureau });
+    const users = ev?.users || [];
     event.places = Math.max(0, event.participants - users.length);
     event.fenetre = fenetre;
+    if (vueBureau && ev?.paiements) {
+      event.paiements = ev.paiements;
+    }
   }
 
   res.json(events);
@@ -1027,10 +1039,25 @@ app.post("/api/admin/roster/sync-portail", authenticateAdmin, async (req, res) =
     }
     const items = [];
     let page = 1, pages = 1;
-    do {
-      const rep = await fetch(`${PORTAIL_ANNUAIRE_URL}?page=${page}&per_page=1000`, {
+    const fetchAnnuaire = async (url) => {
+      return await fetch(`${url}?page=${page}&per_page=1000`, {
         headers: { "X-API-Key": row.valeur },
+        signal: AbortSignal.timeout(4000),
       });
+    };
+
+    do {
+      let rep;
+      try {
+        rep = await fetchAnnuaire(PORTAIL_ANNUAIRE_URL);
+      } catch (err) {
+        if (PORTAIL_ANNUAIRE_URL !== "http://10.100.1.20/api/annuaire/liste") {
+          console.warn("[sync-portail] repli vers http://10.100.1.20/api/annuaire/liste suite à :", err.message);
+          rep = await fetchAnnuaire("http://10.100.1.20/api/annuaire/liste");
+        } else {
+          throw err;
+        }
+      }
       if (rep.status === 401 || rep.status === 403) {
         res.status(400).json({ success: false, message: "Clé du portail refusée (invalide, révoquée ou plus 2A+) : redépose une clé valide." });
         return;
@@ -1064,7 +1091,7 @@ app.post("/api/admin/roster/sync-portail", authenticateAdmin, async (req, res) =
     res.json({ success: true, rapport: { annuaire: items.length, misAJour: updates.length, nouveaux: inserts.length }, roster: c });
   } catch (err) {
     console.error("[sync-portail]", err);
-    res.status(500).json({ success: false, message: "Erreur pendant la synchronisation." });
+    res.status(500).json({ success: false, message: `Erreur pendant la synchronisation : ${err.message || err}` });
   }
 });
 

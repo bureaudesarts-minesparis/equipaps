@@ -87,18 +87,33 @@ export default function ListEventsPage() {
 
         <div class="flex flex-col gap-4">
           <For each={events().filter(ev => ev.date < new Date()).sort((ea, eb) => eb.date - ea.date)}>
-            {ev => (
-              <Link href={`/event/${ev.id}`} class="rounded shadow px-4 py-2 bg-rc flex flex-row gap-2">
-                <div class="font-bold text-lg">{ev.name}</div>
-                <div class="text-gray-700 flex flex-row items-center gap-1">
-                  <Icon type="location-dot" size={1}/>
-                  {ev.location}
-                  <span>{mds}</span>
-                  <Icon type="calendar-week" size={1}/>
-                  {ev.date.toLocaleDateString()}
-                </div>
-              </Link>
-            )}
+            {ev => {
+              const r = ev.paiements;
+              const regularise = r && (r.dus === 0 || r.payes >= r.dus);
+              const enAttente = r && (r.dus > 0 && r.payes < r.dus);
+              return (
+                <Link href={`/event/${ev.id}`} classList={{
+                  "rounded shadow px-4 py-2 flex flex-row items-center justify-between gap-2": true,
+                  "bg-green-100": isAdmin() && regularise,
+                  "bg-yellow-100": isAdmin() && enAttente,
+                  "bg-rc": !isAdmin() || !r,
+                }}>
+                  <div class="flex flex-row items-center gap-2 flex-wrap min-w-0">
+                    <div class="font-bold text-lg">{ev.name}</div>
+                    <div class="text-gray-700 flex flex-row items-center gap-1">
+                      <Icon type="location-dot" size={1}/>
+                      {ev.location}
+                      <span>{mds}</span>
+                      <Icon type="calendar-week" size={1}/>
+                      {ev.date.toLocaleDateString()}
+                    </div>
+                  </div>
+                  <Show when={isAdmin() && ev.paiements}>
+                    <PaiementResumeChip resume={ev.paiements}/>
+                  </Show>
+                </Link>
+              );
+            }}
           </For>
         </div>
       </Show>
