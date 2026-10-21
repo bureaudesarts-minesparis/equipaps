@@ -15,10 +15,10 @@ const SOURCE_PXXS = ["25salvy", "25debourdo"];
 const ALL_PXXS = [TARGET_PXX, ...SOURCE_PXXS];
 
 const pool = await mysql.createPool({
-  host: process.env.DB_MYSQL_HOST,
-  user: process.env.DB_MYSQL_USER,
-  database: process.env.DB_MYSQL_DATABASE,
-  password: process.env.DB_MYSQL_PASSWORD,
+  host: process.env.DB_MYSQL_HOST || process.env.DB_HOST || "localhost",
+  user: process.env.DB_MYSQL_USER || process.env.DB_USER || "equipaps",
+  database: process.env.DB_MYSQL_DATABASE || process.env.DB_NAME || "equipaps",
+  password: process.env.DB_MYSQL_PASSWORD || process.env.DB_PASSWORD,
 });
 
 const conn = await pool.getConnection();
