@@ -948,11 +948,11 @@ app.post("/api/admin/paiement", authenticateAdmin, async (req, res) => {
 });
 
 // --- Clé API du portail des élèves + sync automatique de la base élèves ---
-// La clé (créée sur le portail par un élève 2A+, onglet « Clé API ») est
+// La clé (créée sur le portail, menu « Clés d'API », permission cle_api) est
 // DÉPOSÉE ici par le bureau (write-only : stockée en base, jamais renvoyée en
 // clair). Elle permet au serveur equipaps de tirer l'annuaire du portail sans
 // SSH ni scrape Selenium.
-const PORTAIL_ANNUAIRE_URL = process.env.PORTAIL_ANNUAIRE_URL || "https://eleves.rezal-mdm.com/api/annuaire/liste";
+const PORTAIL_ANNUAIRE_URL = process.env.PORTAIL_ANNUAIRE_URL || "https://eleves.rezal-mdm.com/api/users/annuaire";
 const PORTAIL_UPLOAD_BASE = process.env.PORTAIL_UPLOAD_BASE || "https://eleves.rezal-mdm.com/upload";
 const CLE_PARAM_PORTAIL = "portail_api_key";
 
@@ -1053,9 +1053,9 @@ app.post("/api/admin/roster/sync-portail", authenticateAdmin, async (req, res) =
       try {
         rep = await fetchAnnuaire(PORTAIL_ANNUAIRE_URL);
       } catch (err) {
-        if (PORTAIL_ANNUAIRE_URL !== "http://10.100.1.20/api/annuaire/liste") {
-          console.warn("[sync-portail] repli vers http://10.100.1.20/api/annuaire/liste suite à :", err.message);
-          rep = await fetchAnnuaire("http://10.100.1.20/api/annuaire/liste");
+        if (PORTAIL_ANNUAIRE_URL !== "http://10.100.1.20/api/users/annuaire") {
+          console.warn("[sync-portail] repli vers http://10.100.1.20/api/users/annuaire suite à :", err.message);
+          rep = await fetchAnnuaire("http://10.100.1.20/api/users/annuaire");
         } else {
           throw err;
         }
